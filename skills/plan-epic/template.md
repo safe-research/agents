@@ -6,7 +6,7 @@ Component: impacted component (for example, an NPM workspace package, Cargo work
 
 ## Overview
 
-Short summary of the epich including a short overview of the different steps (that would be separate/ parallel PRs).
+Short summary of the epic including a short overview of the different steps (that would be separate/ parallel PRs).
 
 ---
 
