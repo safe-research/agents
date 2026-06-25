@@ -11,24 +11,30 @@ on:
   workflow_dispatch:
 
 jobs:
-  package:
+  discover:
     runs-on: ubuntu-latest
+    outputs:
+      skills: ${{ steps.list.outputs.skills }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
-      - name: Package each skill
+      - id: list
         run: |
-          mkdir -p dist
-          for skill_dir in skills/*/; do
-            skill_name=$(basename "$skill_dir")
-            zip -r "dist/${skill_name}.skill" "$skill_dir"
-            echo "Packaged ${skill_name}.skill"
-          done
+          skills=$(find skills -mindepth 1 -maxdepth 1 -type d | xargs -I{} basename {} | jq -R . | jq -sc .)
+          echo "skills=$skills" >> $GITHUB_OUTPUT
 
-      - name: Upload skill artifacts
-        uses: actions/upload-artifact@v4
+  package:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        skill: ${{ fromJson(needs.discover.outputs.skills) }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
-          name: skills
-          path: dist/*.skill
+          name: ${{ matrix.skill }}
+          path: skills/${{ matrix.skill }}/
           if-no-files-found: error
           retention-days: 90
