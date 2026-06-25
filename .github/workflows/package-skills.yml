@@ -1,0 +1,34 @@
+name: Package Skills
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'skills/**'
+  pull_request:
+    paths:
+      - 'skills/**'
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package each skill
+        run: |
+          mkdir -p dist
+          for skill_dir in skills/*/; do
+            skill_name=$(basename "$skill_dir")
+            zip -r "dist/${skill_name}.skill" "$skill_dir"
+            echo "Packaged ${skill_name}.skill"
+          done
+
+      - name: Upload skill artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: skills
+          path: dist/*.skill
+          if-no-files-found: error
+          retention-days: 90
