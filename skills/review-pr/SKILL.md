@@ -1,38 +1,48 @@
 ---
 name: review-pr
-description: Review the pull request for the currently checked-out branch (e.g. "/review-pr", "/review-pr 42", "review this PR", "can you look over this branch before I approve it"). Considers the changed code, the commit messages, the PR description, a related epic plan under `epics/`, and docs linked from AGENTS.md/CLAUDE.md, then reports a short, prioritized list of verified, actionable findings with links to exact lines. Works without a GitHub token or authenticated git, locally and inside a GitHub Actions workflow. Use whenever the user asks to review, audit, or sanity-check a PR or the current branch's changes — not for addressing review comments on your own PR (use handle-pr-comments) and not for reviewing uncommitted local changes.
+description: Review the current changes — uncommitted changes, the checked-out branch's pull request, or the last commit (e.g. "/review-pr", "/review-pr 42", "review this PR", "can you look over this branch before I approve it"). Considers the changed code, the commit messages, the PR description, a related epic plan under `epics/`, and docs linked from AGENTS.md/CLAUDE.md, then reports a short, prioritized list of verified, actionable findings with links to exact lines. Works without a GitHub token or authenticated git, locally and inside a GitHub Actions workflow. Use whenever the user asks to review, audit, or sanity-check a PR or the current branch's changes — not for addressing review comments on your own PR (use handle-pr-comments).
 ---
 
 # Review PR
 
-Review the pull request of the checked-out branch and report **only actionable, verified findings about the changed code**, ordered by priority and linked to exact lines. A short review that catches the one real bug is far more valuable than a long one that buries it among nitpicks — every finding costs the reader attention, so each one has to earn its place.
+Review the current changes and report **only actionable, verified findings about the changed code**, ordered by priority and linked to exact lines. A short review that catches the one real bug is far more valuable than a long one that buries it among nitpicks — every finding costs the reader attention, so each one has to earn its place.
 
-The code under review is the current checkout (`HEAD`). The PR number is an optional argument; without it, it's derived from the branch.
+The target (uncommitted changes, a branch's PR, or the last commit) is picked like in the [propose-pr skill](../propose-pr/SKILL.md); see Step 1.
 
 ## Constraints
 
 - **No authentication.** Don't use `gh`, don't read or send `GITHUB_TOKEN`, and don't run git commands that use credentials (e.g. `git fetch origin` over SSH). Use the unauthenticated GitHub API (public repos only, 60 requests/hour — you need at most two) and, if anything must be fetched, anonymous HTTPS (`git -c credential.helper= fetch https://github.com/<owner>/<repo>.git …` with `GIT_TERMINAL_PROMPT=0`).
-- **Read-only.** Don't push, commit, comment on the PR, or modify the working tree. The output is the report.
+- **Read-only.** Don't push, commit, comment on the PR, or modify the working tree. Uncommitted changes are reviewed as they are. The output is the report.
 
-## Step 1 — Identify the PR and the diff
+## Step 1 — Pick the target and get the diff
 
-**Running in GitHub Actions** (`GITHUB_EVENT_PATH` is set and its JSON has a `pull_request` object): take everything from there — `pull_request.number`, `title`, `body`, `html_url`, `base.ref`, `base.sha`, `head.sha` — and the repository from `GITHUB_SERVER_URL`/`GITHUB_REPOSITORY`. No API call is needed.
+Pick **one** target, first match wins:
 
-**Running locally:**
+1. **User-specified** — a PR number, branch, commit, or base ref (e.g. `--base epic/feature/phase-1`). Use it.
+2. **Uncommitted changes** — the worktree is dirty (`git status --porcelain`): review `git diff HEAD` plus relevant untracked files. Base is `HEAD`. No PR.
+3. **Branch with a PR** — on a branch (not `main`/default) that has a PR: review the PR (see below).
+4. **Branch without a PR** — on a branch without a PR: review `MERGE_BASE..HEAD` with `MERGE_BASE=$(git merge-base <default branch> HEAD)`.
+5. **Last commit** — otherwise (e.g. on `main`, detached `HEAD`): review `HEAD~1..HEAD`.
 
-1. Repository: parse `<owner>/<repo>` from the URL of the current branch's upstream remote (`git config branch.<branch>.remote`), falling back to `origin` (also when `HEAD` is detached). Both `git@github.com:o/r.git` and `https://github.com/o/r.git` forms occur.
-2. PR number: use the argument if given. Otherwise, if on a branch, look it up by branch name: `curl -s "https://api.github.com/repos/<owner>/<repo>/pulls?head=<owner>:<branch>&state=all"` (for a fork, use the fork owner in `head=`). If that finds nothing or `HEAD` is detached, match the commit instead: `git ls-remote https://github.com/<owner>/<repo>.git 'refs/pull/*/head' | grep $(git rev-parse HEAD)`. If there's still no PR, review the branch against the default branch anyway and say that no PR description was available.
+State the chosen target at the top of the report. Without a PR there is no description; use the commit messages and conversation context instead.
+
+**Running in GitHub Actions** (`GITHUB_EVENT_PATH` is set and its JSON has a `pull_request` object): the target is that PR. Take `pull_request.number`, `title`, `body`, `html_url`, `base.ref`, `base.sha`, `head.sha` from there, and the repository from `GITHUB_SERVER_URL`/`GITHUB_REPOSITORY`. No API call is needed.
+
+**Finding the PR locally:**
+
+1. Repository: parse `<owner>/<repo>` from the URL of the current branch's upstream remote (`git config branch.<branch>.remote`), falling back to `origin`. Both `git@github.com:o/r.git` and `https://github.com/o/r.git` forms occur.
+2. PR number: the argument if given, else look it up by branch name: `curl -s "https://api.github.com/repos/<owner>/<repo>/pulls?head=<owner>:<branch>&state=all"` (for a fork, use the fork owner in `head=`). If that finds nothing, match the commit: `git ls-remote https://github.com/<owner>/<repo>.git 'refs/pull/*/head' | grep $(git rev-parse HEAD)`.
 3. PR metadata: `curl -s https://api.github.com/repos/<owner>/<repo>/pulls/<n>` → `title`, `body`, `html_url`, `state`/`merged_at`, `base.ref`, `base.sha`, `head.sha`.
 
-**Then, in both cases:**
+**For a PR target:**
 
-- Base: use `base.sha` if it exists locally (`git cat-file -e <sha>`), else `origin/<base.ref>`, else `<base.ref>`. If none is available (e.g. a shallow CI checkout), fetch the base branch anonymously as described above. Compute `MERGE_BASE=$(git merge-base <base> HEAD)`.
-- Diff and commits: `git diff --find-renames $MERGE_BASE..HEAD` and `git log --reverse --format='%H%n%B' $MERGE_BASE..HEAD`. Read both in full.
+- Base: use `base.sha` if it exists locally (`git cat-file -e <sha>`), else `origin/<base.ref>`, else `<base.ref>`. If none is available (e.g. a shallow CI checkout), fetch the base branch anonymously as described above. Compute `MERGE_BASE=$(git merge-base <base> HEAD)` and review `MERGE_BASE..HEAD`.
 - Compare `HEAD` with the PR's `head.sha`. If they differ (local commits not pushed yet, or the local branch is behind), review `HEAD` and say so at the top of the report.
-- If the working tree has uncommitted changes, they're not part of the PR: mention it, and read changed files via `git show HEAD:<path>` where the dirty state would mislead you.
 - If the PR is already merged or closed, still review it, but frame findings as follow-ups.
 
-Links in the report point into the PR's "Files changed" view (see Step 5), so the reader lands on the change itself with its diff context. That view shows the PR's current head, so it only matches your line numbers if `HEAD` is the PR head; if it isn't, or there is no PR, use plain `path:line` references instead.
+**For every target:** read the diff (`git diff --find-renames <base>..HEAD`, or `git diff HEAD` for uncommitted changes) and the commit messages (`git log --reverse --format='%H%n%B' <base>..HEAD`) in full.
+
+Links in the report point into the PR's "Files changed" view (see Step 5), so the reader lands on the change itself with its diff context. That view shows the PR's current head, so it only matches your line numbers if `HEAD` is the PR head; if it isn't, or the target is not a PR, use plain `path:line` references instead.
 
 ## Step 2 — Build the context that defines "correct"
 
@@ -87,9 +97,9 @@ Link every finding to its location in the PR's "Files changed" view: `<PR URL>/f
 Use this format:
 
 ```markdown
-# Review: <PR title> (#<n>)
+# Review: <PR title> (#<n>)   (without a PR: "Review: uncommitted changes", "Review: <branch>" or "Review: <commit sha>")
 
-<PR URL>
+<PR URL, if any>
 
 <One or two sentences: what the PR does and your overall verdict (e.g. "Looks good to merge", "One blocking issue").>
 <If an epic was used: "Checked against <epic file>, phase <N>.">
