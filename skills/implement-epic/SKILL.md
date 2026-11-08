@@ -17,7 +17,8 @@ The skill is **resumable**: every run works out the current state (Step 2) and d
 ## Rules
 
 - **Only the user merges.** Never approve or merge a PR.
-- **Never rewrite history.** No force-push, no rebase of pushed branches. Update a branch by merging its parent into it.
+- **One commit per phase.** Fixes are amended into it, so a phase can be rebased easily when an earlier phase changes.
+- **Force-push only phase branches.** You may rebase and `git push --force-with-lease` your own `epic/<feature>/phase-<N>` branches, nothing else. If force-pushing is not possible (denied, local mode), ask the user to rebase.
 - **Local mode:** no authenticated git or GitHub commands: no `push`, no `gh`, no commits. The user commits (signed), pushes and opens PRs.
 - At most **3** phase agents at a time.
 - After each step, show the user a short status table: phase → status → branch/PR.
@@ -67,7 +68,7 @@ For each phase picked in Step 2:
    Use the implement-phase skill to implement phase <N> of <epic file>.
    Branch: epic/<feature>/phase-<N>, based on <base>. Work only in your worktree: <path>.
    Do not ask the user. If you need a decision (e.g. size over budget, unclear spec), stop and report the question.
-   <Web:   Commit your change (message in the repository's style). Do not push.>
+   <Web:   Commit your change as a single commit (message in the repository's style). Do not push.>
    <Local: Do not commit.>
    Report the implement-phase summary and the worktree path.
    ```
@@ -79,7 +80,7 @@ For each phase picked in Step 2:
 When a phase agent is done:
 
 1. In its worktree, run review-pr with `--base <base>`. Local: it reviews the uncommitted changes.
-2. If there are 🔴 or 🟠 findings, send them to the phase agent to fix, then review again. After 2 rounds, ask the user how to proceed.
+2. If there are 🔴 or 🟠 findings, send them to the phase agent to fix (web: amend the phase commit), then review again. After 2 rounds, ask the user how to proceed.
 3. Then:
    - **Web**: push the branch, open the PR against `<base>` (title and description from propose-pr), subscribe to its activity. Stacked: continue with Step 2 to start the next phase.
    - **Local**: show the user the worktree path, the review result, the propose-pr title and description, and a commit message. Ask them to review, commit (signed), push and open the PR, then run this skill again.
@@ -88,9 +89,9 @@ When a phase agent is done:
 
 On PR activity:
 
-- **Review comments or failing CI** → send them to the phase agent. If it is gone (e.g. after a restart), start a new phase agent (`model: "sonnet"`) in that branch's worktree with the comments and the phase. Review its changes (Step 5.1) before pushing.
+- **Review comments or failing CI** → send them to the phase agent to amend the phase commit. If it is gone (e.g. after a restart), start a new phase agent (`model: "sonnet"`) in that branch's worktree with the comments and the phase. Review its changes (Step 5.1) before force-pushing.
 - **Merged** → go to Step 2 and start the phases that are now unblocked.
-- **Stacked, a lower PR changed** → merge the lower branch into each branch above it (bottom up), resolve conflicts, push. If the user squash-merged a lower PR, merge `main` into the next branch instead.
+- **Stacked, a lower PR changed** → rebase each branch above it onto its updated parent, bottom up (`git rebase --onto <parent branch> <old parent commit>`), resolve conflicts, force-push. If the user merged a lower PR, rebase the next branch onto `main` and retarget its PR to `main`.
 
 ## Step 7 — Finish
 
