@@ -26,8 +26,9 @@ The skill is **resumable**: every run works out the current state (Step 2) and d
 ## Step 1 — Setup
 
 1. **Detect the mode:**
-   - **Web**: `CLAUDE_CODE_REMOTE=true` and you can push and use GitHub tools (create PRs, subscribe to PR activity).
+   - **Web**: you have your own tools to open PRs (e.g. a GitHub MCP server or app integration, not the user's `gh`) **and** `git push --dry-run origin HEAD:refs/heads/epic-probe` succeeds (checks write access, pushes nothing).
    - **Local**: anything else.
+   - On a developer machine the dry run may succeed with the user's credentials; that is still local mode. The user's confirmation (step 2) decides.
 2. **Ask once** (one question, skip what this conversation already settled):
    - Confirm the detected mode.
    - **PR strategy**:
@@ -52,7 +53,7 @@ The skill is **resumable**: every run works out the current state (Step 2) and d
 2. For every phase, state **Depends on:** (phases) and whether it **can run in parallel** with others.
 3. Add the PR strategy line (Step 1).
 4. Propose the plan:
-   - **Web**: commit to `epic/<feature>/plan`, push, open a PR (title and description from propose-pr), subscribe to its activity. Address review comments yourself.
+   - **Web**: commit to `epic/<feature>/plan`, push, open a PR (title and description from propose-pr), watch its activity (Step 6). Address review comments yourself.
    - **Local**: leave the change uncommitted. Show the propose-pr title and description, and ask the user to commit (signed), push and open the PR.
 5. **Stop.** No phase starts before the user merged the plan PR.
 
@@ -82,12 +83,12 @@ When a phase agent is done:
 1. In its worktree, run review-pr with `--base <base>`. Local: it reviews the uncommitted changes.
 2. If there are 🔴 or 🟠 findings, send them to the phase agent to fix (web: amend the phase commit), then review again. After 2 rounds, ask the user how to proceed.
 3. Then:
-   - **Web**: push the branch, open the PR against `<base>` (title and description from propose-pr), subscribe to its activity. Stacked: continue with Step 2 to start the next phase.
+   - **Web**: push the branch, open the PR against `<base>` (title and description from propose-pr), watch its activity (Step 6). Stacked: continue with Step 2 to start the next phase.
    - **Local**: show the user the worktree path, the review result, the propose-pr title and description, and a commit message. Ask them to review, commit (signed), push and open the PR, then run this skill again.
 
 ## Step 6 — Follow the PRs (web)
 
-On PR activity:
+If you can subscribe to PR activity, do so. Otherwise ask the user to run this skill again when there are comments, failing CI or a merge. On PR activity:
 
 - **Review comments or failing CI** → send them to the phase agent to amend the phase commit. If it is gone (e.g. after a restart), start a new phase agent (`model: "sonnet"`) in that branch's worktree with the comments and the phase. Review its changes (Step 5.1) before force-pushing.
 - **Merged** → go to Step 2 and start the phases that are now unblocked.
